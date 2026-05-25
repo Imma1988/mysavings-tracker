@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="pt">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>MySavings Tracker</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <main class="app-shell">
+      <section class="topbar" aria-label="Resumo">
+        <div>
+          <p class="eyebrow">Fidelidade MySavings</p>
+          <h1>Tracker de movimentos e juros</h1>
+        </div>
+        <div class="toolbar">
+          <button id="exportJson" type="button" title="Exportar dados">Exportar</button>
+          <label class="import-button" title="Importar dados">
+            Importar
+            <input id="importJson" type="file" accept="application/json">
+          </label>
+        </div>
+      </section>
+
+      <section class="metrics-grid" aria-label="Indicadores">
+        <article class="metric">
+          <span>Saldo atual</span>
+          <strong id="currentBalance">0,00 €</strong>
+        </article>
+        <article class="metric">
+          <span>Juros brutos estimados</span>
+          <strong id="grossInterest">0,00 €</strong>
+        </article>
+        <article class="metric">
+          <span>Juros líquidos estimados</span>
+          <strong id="netInterest">0,00 €</strong>
+        </article>
+        <article class="metric">
+          <span>Total movimentado</span>
+          <strong id="totalMoved">0,00 €</strong>
+        </article>
+      </section>
+
+      <section class="workspace">
+        <form id="settingsForm" class="panel settings-panel">
+          <div class="panel-heading">
+            <h2>Parâmetros</h2>
+            <p>Atualiza a taxa sempre que a MySavings alterar a remuneração.</p>
+          </div>
+
+          <label>
+            TANB anual (%)
+            <input id="annualRate" type="number" min="0" step="0.01" value="2.50">
+          </label>
+
+          <label>
+            Retenção de imposto (%)
+            <input id="taxRate" type="number" min="0" max="100" step="0.01" value="28">
+          </label>
+
+          <label>
+            Data final do cálculo
+            <input id="calculationDate" type="date">
+          </label>
+
+          <button type="submit">Guardar parâmetros</button>
+        </form>
+
+        <form id="transactionForm" class="panel transaction-panel">
+          <div class="panel-heading">
+            <h2>Novo movimento</h2>
+            <p>Regista entradas, saídas e juros pagos quando aparecerem na app.</p>
+          </div>
+
+          <div class="segmented" role="group" aria-label="Tipo de movimento">
+            <label>
+              <input type="radio" name="type" value="deposit" checked>
+              <span>Entrada</span>
+            </label>
+            <label>
+              <input type="radio" name="type" value="withdrawal">
+              <span>Saída</span>
+            </label>
+            <label>
+              <input type="radio" name="type" value="interest">
+              <span>Juros pagos</span>
+            </label>
+          </div>
+
+          <div class="form-grid">
+            <label>
+              Data
+              <input id="transactionDate" type="date" required>
+            </label>
+
+            <label>
+              Valor (€)
+              <input id="transactionAmount" type="number" min="0.01" step="0.01" required>
+            </label>
+          </div>
+
+          <label>
+            Nota
+            <input id="transactionNote" type="text" maxlength="80" placeholder="Ex.: reforço mensal">
+          </label>
+
+          <button type="submit">Adicionar movimento</button>
+        </form>
+      </section>
+
+      <section class="panel table-panel">
+        <div class="panel-heading table-heading">
+          <div>
+            <h2>Movimentos</h2>
+            <p id="movementCount">Sem movimentos registados.</p>
+          </div>
+          <button id="clearData" type="button" class="danger">Limpar dados</button>
+        </div>
+
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Data</th>
+                <th>Tipo</th>
+                <th>Nota</th>
+                <th class="number">Valor</th>
+                <th class="number">Saldo</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody id="transactionsTable"></tbody>
+          </table>
+        </div>
+      </section>
+    </main>
+
+    <script src="app.js"></script>
+  </body>
+</html>
