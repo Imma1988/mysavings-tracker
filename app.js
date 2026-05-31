@@ -1,5 +1,6 @@
 const storageKey = "mysavings-tracker-v4";
 const quoteStorageKey = "mysavings-tracker-quotes-v1";
+const backupStoragePrefix = "mysavings-tracker-backup-";
 const previousStorageKeys = ["mysavings-tracker-v3", "mysavings-tracker-v2", "mysavings-tracker-v1"];
 
 const currency = new Intl.NumberFormat("pt-PT", {
@@ -62,7 +63,7 @@ function emptyState() {
 }
 
 function loadState() {
-  const candidates = [storageKey, ...previousStorageKeys]
+  const candidates = listStateStorageKeys()
     .map((key) => readStoredState(key))
     .filter(Boolean);
 
@@ -78,6 +79,19 @@ function loadState() {
   }, candidates[0]);
 
   return normalizeState(bestCandidate);
+}
+
+function listStateStorageKeys() {
+  const keys = new Set([storageKey, ...previousStorageKeys]);
+
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key && key.startsWith(backupStoragePrefix)) {
+      keys.add(key);
+    }
+  }
+
+  return [...keys];
 }
 
 function readStoredState(key) {
@@ -112,7 +126,31 @@ function normalizeState(value) {
 }
 
 function saveState() {
+  backupCurrentState();
   localStorage.setItem(storageKey, JSON.stringify(state, null, 2));
+}
+
+function backupCurrentState() {
+  const current = readStoredState(storageKey);
+  if (!current || !Array.isArray(current.transactions) || !current.transactions.length) {
+    return;
+  }
+
+  const key = `${backupStoragePrefix}${new Date().toISOString()}`;
+  localStorage.setItem(key, JSON.stringify(current, null, 2));
+  pruneBackups();
+}
+
+function pruneBackups() {
+  const backups = [];
+  for (let index = 0; index < localStorage.length; index += 1) {
+    const key = localStorage.key(index);
+    if (key && key.startsWith(backupStoragePrefix)) {
+      backups.push(key);
+    }
+  }
+
+  backups.sort().slice(0, -10).forEach((key) => localStorage.removeItem(key));
 }
 
 function loadQuotes() {
@@ -513,6 +551,10 @@ function render() {
 }
 
 function renderQuoteStatus() {
+  if (!elements.quoteStatus) {
+    return;
+  }
+
   if (!hasQuotes()) {
     elements.quoteStatus.textContent = "Sem cotacoes importadas. A app usa TANB como estimativa.";
     return;
@@ -605,37 +647,41 @@ elements.importJson.addEventListener("change", async (event) => {
   }
 });
 
-elements.importQuotes.addEventListener("change", async (event) => {
-  const [file] = event.target.files;
-  if (!file) {
-    return;
-  }
-
-  try {
-    if (!window.XLSX) {
-      throw new Error("Biblioteca XLSX indisponivel");
+if (elements.importQuotes) {
+  elements.importQuotes.addEventListener("change", async (event) => {
+    const [file] = event.target.files;
+    if (!file) {
+      return;
     }
 
-    const importedQuotes = await readQuotesFromExcel(file);
-    if (!importedQuotes.dates.length) {
-      throw new Error("Sem cotacoes");
-    }
+    try {
+      if (!window.XLSX) {
+        throw new Error("Biblioteca XLSX indisponivel");
+      }
 
-    quotes = importedQuotes;
-    saveQuotes();
+      const importedQuotes = await readQuotesFromExcel(file);
+      if (!importedQuotes.dates.length) {
+        throw new Error("Sem cotacoes");
+      }
+
+      quotes = importedQuotes;
+      saveQuotes();
+      render();
+    } catch {
+      alert("Nao foi possivel importar as cotacoes. Confirma se e o Excel da Fidelidade com DATA COTACAO e COTACAO.");
+    } finally {
+      event.target.value = "";
+    }
+  });
+}
+
+if (elements.clearQuotes) {
+  elements.clearQuotes.addEventListener("click", () => {
+    localStorage.removeItem(quoteStorageKey);
+    quotes = emptyQuotes();
     render();
-  } catch {
-    alert("Nao foi possivel importar as cotacoes. Confirma se e o Excel da Fidelidade com DATA COTACAO e COTACAO.");
-  } finally {
-    event.target.value = "";
-  }
-});
-
-elements.clearQuotes.addEventListener("click", () => {
-  localStorage.removeItem(quoteStorageKey);
-  quotes = emptyQuotes();
-  render();
-});
+  });
+}
 
 elements.clearData.addEventListener("click", () => {
   const confirmed = confirm("Queres apagar todos os dados guardados neste browser?");
@@ -643,6 +689,7 @@ elements.clearData.addEventListener("click", () => {
     return;
   }
 
+  backupCurrentState();
   localStorage.removeItem(storageKey);
   state = emptyState();
   elements.transactionDate.value = todayIso();
