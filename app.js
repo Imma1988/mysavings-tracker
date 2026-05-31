@@ -57,19 +57,22 @@ function emptyState() {
 }
 
 function loadState() {
-  const saved = readStoredState(storageKey);
-  if (saved) {
-    return normalizeState(saved);
+  const candidates = [storageKey, ...previousStorageKeys]
+    .map((key) => readStoredState(key))
+    .filter(Boolean);
+
+  if (!candidates.length) {
+    return emptyState();
   }
 
-  for (const key of previousStorageKeys) {
-    const previous = readStoredState(key);
-    if (previous) {
-      return normalizeState(previous);
+  const bestCandidate = candidates.reduce((best, candidate) => {
+    if (candidate.transactions.length > best.transactions.length) {
+      return candidate;
     }
-  }
+    return best;
+  }, candidates[0]);
 
-  return emptyState();
+  return normalizeState(bestCandidate);
 }
 
 function readStoredState(key) {
