@@ -1,4 +1,5 @@
-const storageKey = "mysavings-tracker-v1";
+const storageKey = "mysavings-tracker-v2";
+const legacyStorageKey = "mysavings-tracker-v1";
 
 const currency = new Intl.NumberFormat("pt-PT", {
   style: "currency",
@@ -7,14 +8,12 @@ const currency = new Intl.NumberFormat("pt-PT", {
 
 const labels = {
   deposit: "Entrada",
-  withdrawal: "Saída",
-  interest: "Juros pagos",
+  withdrawal: "Levantamento",
 };
 
 const elements = {
-  annualRate: document.querySelector("#annualRate"),
   taxRate: document.querySelector("#taxRate"),
-  calculationDate: document.querySelector("#calculationDate"),
+  currentBalanceInput: document.querySelector("#currentBalanceInput"),
   transactionDate: document.querySelector("#transactionDate"),
   transactionAmount: document.querySelector("#transactionAmount"),
   transactionNote: document.querySelector("#transactionNote"),
@@ -23,9 +22,11 @@ const elements = {
   transactionsTable: document.querySelector("#transactionsTable"),
   movementCount: document.querySelector("#movementCount"),
   currentBalance: document.querySelector("#currentBalance"),
-  grossInterest: document.querySelector("#grossInterest"),
-  netInterest: document.querySelector("#netInterest"),
-  totalMoved: document.querySelector("#totalMoved"),
+  netProfit: document.querySelector("#netProfit"),
+  grossProfit: document.querySelector("#grossProfit"),
+  taxWithheld: document.querySelector("#taxWithheld"),
+  totalDeposits: document.querySelector("#totalDeposits"),
+  totalWithdrawals: document.querySelector("#totalWithdrawals"),
   exportJson: document.querySelector("#exportJson"),
   importJson: document.querySelector("#importJson"),
   clearData: document.querySelector("#clearData"),
@@ -37,41 +38,77 @@ function todayIso() {
   return new Date().toISOString().slice(0, 10);
 }
 
-function loadState() {
-  const fallback = {
+function emptyState() {
+  return {
     settings: {
-      annualRate: 2.5,
+      currentBalance: 0,
       taxRate: 28,
-      calculationDate: todayIso(),
     },
     transactions: [],
   };
+}
 
-  try {
-    const saved = JSON.parse(localStorage.getItem(storageKey));
-    if (!saved || !Array.isArray(saved.transactions)) {
-      return fallback;
-    }
-
-    return {
-      settings: { ...fallback.settings, ...saved.settings },
-      transactions: saved.transactions,
-    };
-  } catch {
-    return fallback;
+function loadState() {
+  const saved = readStoredState(storageKey);
+  if (saved) {
+    return normalizeState(saved);
   }
+
+  const legacy = readStoredState(legacyStorageKey);
+  if (legacy) {
+    return normalizeState({
+      settings: {
+        currentBalance: legacy.transactions.reduce((sum, item) => sum + signedLegacyAmount(item), 0),
+        taxRate: legacy.settings?.taxRate ?? 28,
+      },
+      transactions: legacy.transactions.filter((item) => item.type === "deposit" || item.type === "withdrawal"),
+    });
+  }
+
+  return emptyState();
+}
+
+function readStoredState(key) {
+  try {
+    const saved = JSON.parse(localStorage.getItem(key));
+    return saved && Array.isArray(saved.transactions) ? saved : null;
+  } catch {
+    return null;
+  }
+}
+
+function normalizeState(value) {
+  const fallback = emptyState();
+  return {
+    settings: {
+      ...fallback.settings,
+      ...value.settings,
+      currentBalance: Number(value.settings?.currentBalance ?? 0),
+      taxRate: Number(value.settings?.taxRate ?? 28),
+    },
+    transactions: value.transactions
+      .filter((item) => item.type === "deposit" || item.type === "withdrawal")
+      .map((item) => ({
+        id: item.id || crypto.randomUUID(),
+        type: item.type,
+        date: item.date || todayIso(),
+        amount: Math.abs(Number(item.amount || 0)),
+        note: item.note || "",
+        createdAt: item.createdAt || new Date().toISOString(),
+      })),
+  };
 }
 
 function saveState() {
   localStorage.setItem(storageKey, JSON.stringify(state, null, 2));
 }
 
-function signedAmount(transaction) {
+function signedLegacyAmount(transaction) {
   if (transaction.type === "withdrawal") {
-    return -Math.abs(transaction.amount);
+    return -Math.abs(Number(transaction.amount || 0));
   }
 
-  return Math.abs(transaction.amount);
+  return Math.abs(Number(transaction.amount || 0));
 }
 
 function sortTransactions(transactions = state.transactions) {
@@ -81,77 +118,64 @@ function sortTransactions(transactions = state.transactions) {
   });
 }
 
-function daysBetween(startIso, endIso) {
-  const start = new Date(`${startIso}T00:00:00`);
-  const end = new Date(`${endIso}T00:00:00`);
-  return Math.max(0, Math.round((end - start) / 86400000));
-}
-
 function calculateSummary() {
-  const transactions = sortTransactions();
-  const annualRate = Number(state.settings.annualRate) / 100;
   const taxRate = Number(state.settings.taxRate) / 100;
-  const calculationDate = state.settings.calculationDate || todayIso();
-  let balance = 0;
-  let grossInterest = 0;
-  let previousDate = transactions[0]?.date || calculationDate;
-
-  transactions.forEach((transaction) => {
-    const elapsedDays = daysBetween(previousDate, transaction.date);
-    grossInterest += balance * annualRate * (elapsedDays / 365);
-    balance += signedAmount(transaction);
-    previousDate = transaction.date;
-  });
-
-  const finalDays = daysBetween(previousDate, calculationDate);
-  grossInterest += balance * annualRate * (finalDays / 365);
-
-  const totalMoved = transactions.reduce((sum, transaction) => {
-    return sum + Math.abs(transaction.amount);
-  }, 0);
+  const totalDeposits = state.transactions
+    .filter((item) => item.type === "deposit")
+    .reduce((sum, item) => sum + item.amount, 0);
+  const totalWithdrawals = state.transactions
+    .filter((item) => item.type === "withdrawal")
+    .reduce((sum, item) => sum + item.amount, 0);
+  const currentBalance = Number(state.settings.currentBalance || 0);
+  const netProfit = currentBalance + totalWithdrawals - totalDeposits;
+  const grossProfit = netProfit > 0 && taxRate < 1 ? netProfit / (1 - taxRate) : netProfit;
+  const taxWithheld = netProfit > 0 ? grossProfit - netProfit : 0;
 
   return {
-    balance,
-    grossInterest,
-    netInterest: grossInterest * (1 - taxRate),
-    totalMoved,
+    currentBalance,
+    totalDeposits,
+    totalWithdrawals,
+    netProfit,
+    grossProfit,
+    taxWithheld,
   };
 }
 
-function runningBalances() {
-  let balance = 0;
+function runningCapital() {
+  let capital = 0;
   return sortTransactions().map((transaction) => {
-    balance += signedAmount(transaction);
-    return { ...transaction, balance };
+    capital += transaction.type === "withdrawal" ? -transaction.amount : transaction.amount;
+    return { ...transaction, capital };
   });
 }
 
 function render() {
-  elements.annualRate.value = state.settings.annualRate;
+  elements.currentBalanceInput.value = state.settings.currentBalance;
   elements.taxRate.value = state.settings.taxRate;
-  elements.calculationDate.value = state.settings.calculationDate;
 
   const summary = calculateSummary();
-  elements.currentBalance.textContent = currency.format(summary.balance);
-  elements.grossInterest.textContent = currency.format(summary.grossInterest);
-  elements.netInterest.textContent = currency.format(summary.netInterest);
-  elements.totalMoved.textContent = currency.format(summary.totalMoved);
+  elements.currentBalance.textContent = currency.format(summary.currentBalance);
+  elements.netProfit.textContent = currency.format(summary.netProfit);
+  elements.grossProfit.textContent = currency.format(summary.grossProfit);
+  elements.taxWithheld.textContent = currency.format(summary.taxWithheld);
+  elements.totalDeposits.textContent = currency.format(summary.totalDeposits);
+  elements.totalWithdrawals.textContent = currency.format(summary.totalWithdrawals);
 
-  const rows = runningBalances();
+  const rows = runningCapital();
   elements.movementCount.textContent = rows.length
     ? `${rows.length} movimento${rows.length === 1 ? "" : "s"} registado${rows.length === 1 ? "" : "s"}.`
     : "Sem movimentos registados.";
 
   elements.transactionsTable.innerHTML = rows
     .map((transaction) => {
-      const amountClass = transaction.type === "withdrawal" ? "negative" : "positive";
+      const signedAmount = transaction.type === "withdrawal" ? -transaction.amount : transaction.amount;
       return `
         <tr>
           <td>${transaction.date}</td>
           <td><span class="pill ${transaction.type}">${labels[transaction.type]}</span></td>
           <td>${escapeHtml(transaction.note || "-")}</td>
-          <td class="number ${amountClass}">${currency.format(signedAmount(transaction))}</td>
-          <td class="number">${currency.format(transaction.balance)}</td>
+          <td class="number">${currency.format(signedAmount)}</td>
+          <td class="number">${currency.format(transaction.capital)}</td>
           <td class="number">
             <button class="remove-button" type="button" data-id="${transaction.id}">Remover</button>
           </td>
@@ -173,9 +197,8 @@ function escapeHtml(value) {
 elements.settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
   state.settings = {
-    annualRate: Number(elements.annualRate.value),
-    taxRate: Number(elements.taxRate.value),
-    calculationDate: elements.calculationDate.value || todayIso(),
+    currentBalance: Number(elements.currentBalanceInput.value || 0),
+    taxRate: Number(elements.taxRate.value || 0),
   };
   saveState();
   render();
@@ -184,11 +207,10 @@ elements.settingsForm.addEventListener("submit", (event) => {
 elements.transactionForm.addEventListener("submit", (event) => {
   event.preventDefault();
   const form = new FormData(elements.transactionForm);
-  const type = form.get("type");
 
   state.transactions.push({
     id: crypto.randomUUID(),
-    type,
+    type: form.get("type"),
     date: elements.transactionDate.value,
     amount: Number(elements.transactionAmount.value),
     note: elements.transactionNote.value.trim(),
@@ -232,36 +254,30 @@ elements.importJson.addEventListener("change", async (event) => {
   try {
     const imported = JSON.parse(await file.text());
     if (!Array.isArray(imported.transactions)) {
-      throw new Error("Formato inválido");
+      throw new Error("Formato invalido");
     }
 
-    state = {
-      settings: { ...state.settings, ...imported.settings },
-      transactions: imported.transactions,
-    };
+    state = normalizeState(imported);
     saveState();
     render();
   } catch {
-    alert("Não foi possível importar o ficheiro. Confirma se é um export deste projeto.");
+    alert("Nao foi possivel importar o ficheiro. Confirma se e um export deste projeto.");
   } finally {
     event.target.value = "";
   }
 });
 
 elements.clearData.addEventListener("click", () => {
-  const confirmed = confirm("Queres apagar todos os movimentos e parâmetros guardados neste browser?");
+  const confirmed = confirm("Queres apagar todos os dados guardados neste browser?");
   if (!confirmed) {
     return;
   }
 
   localStorage.removeItem(storageKey);
-  state = loadState();
+  state = emptyState();
   elements.transactionDate.value = todayIso();
   render();
 });
 
 elements.transactionDate.value = todayIso();
-if (!state.settings.calculationDate) {
-  state.settings.calculationDate = todayIso();
-}
 render();

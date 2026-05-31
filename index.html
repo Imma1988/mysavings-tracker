@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MySavings Tracker</title>
+    <title>MySavings Lucro Real</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -11,7 +11,7 @@
       <section class="topbar" aria-label="Resumo">
         <div>
           <p class="eyebrow">Fidelidade MySavings</p>
-          <h1>Tracker de movimentos e juros</h1>
+          <h1>Lucro real dos levantamentos</h1>
         </div>
         <div class="toolbar">
           <button id="exportJson" type="button" title="Exportar dados">Exportar</button>
@@ -24,52 +24,55 @@
 
       <section class="metrics-grid" aria-label="Indicadores">
         <article class="metric">
-          <span>Saldo atual</span>
-          <strong id="currentBalance">0,00 €</strong>
+          <span>Saldo atual na MySavings</span>
+          <strong id="currentBalance">0,00 &euro;</strong>
+        </article>
+        <article class="metric highlight">
+          <span>Lucro liquido real</span>
+          <strong id="netProfit">0,00 &euro;</strong>
         </article>
         <article class="metric">
-          <span>Juros brutos estimados</span>
-          <strong id="grossInterest">0,00 €</strong>
+          <span>Juros brutos antes de imposto</span>
+          <strong id="grossProfit">0,00 &euro;</strong>
         </article>
         <article class="metric">
-          <span>Juros líquidos estimados</span>
-          <strong id="netInterest">0,00 €</strong>
+          <span>Imposto retido</span>
+          <strong id="taxWithheld">0,00 &euro;</strong>
         </article>
-        <article class="metric">
-          <span>Total movimentado</span>
-          <strong id="totalMoved">0,00 €</strong>
+        <article class="metric compact">
+          <span>Total de entradas</span>
+          <strong id="totalDeposits">0,00 &euro;</strong>
+        </article>
+        <article class="metric compact">
+          <span>Total levantado</span>
+          <strong id="totalWithdrawals">0,00 &euro;</strong>
         </article>
       </section>
 
       <section class="workspace">
         <form id="settingsForm" class="panel settings-panel">
           <div class="panel-heading">
-            <h2>Parâmetros</h2>
-            <p>Atualiza a taxa sempre que a MySavings alterar a remuneração.</p>
+            <h2>Saldo e imposto</h2>
+            <p>Atualiza o saldo com o valor que aparece agora na app MySavings.</p>
           </div>
 
           <label>
-            TANB anual (%)
-            <input id="annualRate" type="number" min="0" step="0.01" value="2.50">
+            Saldo atual na MySavings (&euro;)
+            <input id="currentBalanceInput" type="number" min="0" step="0.01" value="0">
           </label>
 
           <label>
-            Retenção de imposto (%)
+            Retencao de imposto (%)
             <input id="taxRate" type="number" min="0" max="100" step="0.01" value="28">
           </label>
 
-          <label>
-            Data final do cálculo
-            <input id="calculationDate" type="date">
-          </label>
-
-          <button type="submit">Guardar parâmetros</button>
+          <button type="submit">Atualizar calculo</button>
         </form>
 
         <form id="transactionForm" class="panel transaction-panel">
           <div class="panel-heading">
             <h2>Novo movimento</h2>
-            <p>Regista entradas, saídas e juros pagos quando aparecerem na app.</p>
+            <p>Regista apenas dinheiro que entrou ou saiu da MySavings.</p>
           </div>
 
           <div class="segmented" role="group" aria-label="Tipo de movimento">
@@ -79,11 +82,7 @@
             </label>
             <label>
               <input type="radio" name="type" value="withdrawal">
-              <span>Saída</span>
-            </label>
-            <label>
-              <input type="radio" name="type" value="interest">
-              <span>Juros pagos</span>
+              <span>Levantamento</span>
             </label>
           </div>
 
@@ -94,18 +93,23 @@
             </label>
 
             <label>
-              Valor (€)
+              Valor (&euro;)
               <input id="transactionAmount" type="number" min="0.01" step="0.01" required>
             </label>
           </div>
 
           <label>
             Nota
-            <input id="transactionNote" type="text" maxlength="80" placeholder="Ex.: reforço mensal">
+            <input id="transactionNote" type="text" maxlength="80" placeholder="Ex.: levantamento parcial">
           </label>
 
           <button type="submit">Adicionar movimento</button>
         </form>
+      </section>
+
+      <section class="panel formula-panel">
+        <h2>Como o lucro e calculado</h2>
+        <p>Lucro liquido real = saldo atual + total levantado - total de entradas. Se todos os movimentos estiverem registados, este valor e o dinheiro que ganhaste depois de imposto.</p>
       </section>
 
       <section class="panel table-panel">
@@ -125,7 +129,7 @@
                 <th>Tipo</th>
                 <th>Nota</th>
                 <th class="number">Valor</th>
-                <th class="number">Saldo</th>
+                <th class="number">Capital ainda aplicado</th>
                 <th></th>
               </tr>
             </thead>
