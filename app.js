@@ -63,9 +63,7 @@ function emptyState() {
 }
 
 function loadState() {
-  const candidates = listStateStorageKeys()
-    .map((key) => readStoredState(key))
-    .filter(Boolean);
+  const candidates = findStoredStates();
 
   if (!candidates.length) {
     return emptyState();
@@ -81,26 +79,61 @@ function loadState() {
   return normalizeState(bestCandidate);
 }
 
-function listStateStorageKeys() {
-  const keys = new Set([storageKey, ...previousStorageKeys]);
+function findStoredStates() {
+  const candidates = [];
+  const knownKeys = new Set([storageKey, ...previousStorageKeys]);
 
   for (let index = 0; index < localStorage.length; index += 1) {
     const key = localStorage.key(index);
-    if (key && key.startsWith(backupStoragePrefix)) {
-      keys.add(key);
+    if (key) {
+      knownKeys.add(key);
     }
   }
 
-  return [...keys];
+  for (let index = 0; index < sessionStorage.length; index += 1) {
+    const key = sessionStorage.key(index);
+    if (key) {
+      const stateFromSession = parseStoredState(sessionStorage.getItem(key));
+      if (stateFromSession) {
+        candidates.push(stateFromSession);
+      }
+    }
+  }
+
+  knownKeys.forEach((key) => {
+    const stateFromLocal = readStoredState(key);
+    if (stateFromLocal) {
+      candidates.push(stateFromLocal);
+    }
+  });
+
+  return candidates;
 }
 
 function readStoredState(key) {
   try {
-    const saved = JSON.parse(localStorage.getItem(key));
-    return saved && Array.isArray(saved.transactions) ? saved : null;
+    return parseStoredState(localStorage.getItem(key));
   } catch {
     return null;
   }
+}
+
+function parseStoredState(raw) {
+  try {
+    const saved = JSON.parse(raw);
+    if (saved && Array.isArray(saved.transactions)) {
+      return saved;
+    }
+
+    if (Array.isArray(saved)) {
+      const transactions = saved.filter((item) => item && (item.type === "deposit" || item.type === "withdrawal"));
+      return transactions.length ? { settings: {}, transactions } : null;
+    }
+  } catch {
+    return null;
+  }
+
+  return null;
 }
 
 function normalizeState(value) {
