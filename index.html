@@ -61,13 +61,14 @@
         <form id="settingsForm" class="panel settings-panel">
           <div class="panel-heading">
             <h2>Parametros</h2>
-            <p>A TANB e usada para calcular a mais-valia bruta de cada resgate.</p>
+            <p>As taxas historicas sao aplicadas automaticamente por periodo.</p>
           </div>
 
-          <label>
-            TANB anual (%)
-            <input id="annualRate" type="number" min="0" step="0.01" value="2">
-          </label>
+          <div class="rate-history" aria-label="Historico de taxas">
+            <div><strong>1o semestre 2026</strong><span>2,000% TANB</span></div>
+            <div><strong>2o semestre 2025</strong><span>1,700% TANB</span></div>
+            <div><strong>1o semestre 2025</strong><span>2,250% TANB</span></div>
+          </div>
 
           <label>
             Retencao de imposto (%)
@@ -122,7 +123,7 @@
 
       <section class="panel formula-panel">
         <h2>Regra usada</h2>
-        <p>Os resgates consomem primeiro as entradas mais antigas. Para cada parte resgatada: valor sujeito a imposto = valor bruto resgatado - custo original proporcional; imposto = valor sujeito a imposto x 28%.</p>
+        <p>Os resgates consomem primeiro as entradas mais antigas. Para cada parte resgatada, a valorizacao e calculada com a taxa historica aplicavel a cada dia do periodo; imposto = valor sujeito a imposto x 28%.</p>
       </section>
 
       <section class="panel table-panel">

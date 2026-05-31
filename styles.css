@@ -202,6 +202,31 @@ label {
   max-width: 880px;
 }
 
+.rate-history {
+  display: grid;
+  gap: 8px;
+}
+
+.rate-history div {
+  align-items: center;
+  background: rgba(15, 123, 99, 0.08);
+  border: 1px solid rgba(15, 123, 99, 0.16);
+  border-radius: 8px;
+  display: flex;
+  justify-content: space-between;
+  min-height: 42px;
+  padding: 8px 10px;
+}
+
+.rate-history strong {
+  font-size: 0.86rem;
+}
+
+.rate-history span {
+  color: var(--brand-dark);
+  font-weight: 800;
+}
+
 form {
   display: grid;
   gap: 14px;

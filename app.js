@@ -11,8 +11,13 @@ const labels = {
   withdrawal: "Resgate",
 };
 
+const rateSchedule = [
+  { start: "2025-01-01", end: "2025-07-01", rate: 0.0225, label: "1o semestre 2025: 2,250%" },
+  { start: "2025-07-01", end: "2026-01-01", rate: 0.017, label: "2o semestre 2025: 1,700%" },
+  { start: "2026-01-01", end: "2026-07-01", rate: 0.02, label: "1o semestre 2026: 2,000%" },
+];
+
 const elements = {
-  annualRate: document.querySelector("#annualRate"),
   taxRate: document.querySelector("#taxRate"),
   calculationDate: document.querySelector("#calculationDate"),
   transactionDate: document.querySelector("#transactionDate"),
@@ -44,7 +49,6 @@ function todayIso() {
 function emptyState() {
   return {
     settings: {
-      annualRate: 2,
       taxRate: 28,
       calculationDate: todayIso(),
     },
@@ -83,7 +87,6 @@ function normalizeState(value) {
     settings: {
       ...fallback.settings,
       ...value.settings,
-      annualRate: Number(value.settings?.annualRate ?? fallback.settings.annualRate),
       taxRate: Number(value.settings?.taxRate ?? fallback.settings.taxRate),
       calculationDate: value.settings?.calculationDate || fallback.settings.calculationDate,
     },
@@ -117,8 +120,43 @@ function daysBetween(startIso, endIso) {
   return Math.max(0, Math.round((end - start) / 86400000));
 }
 
-function growthFactor(startIso, endIso, annualRate) {
-  return 1 + annualRate * (daysBetween(startIso, endIso) / 365);
+function rateForDate(iso) {
+  const rate = rateSchedule.find((item) => iso >= item.start && iso < item.end);
+  if (rate) {
+    return rate.rate;
+  }
+
+  if (iso < rateSchedule[0].start) {
+    return rateSchedule[0].rate;
+  }
+
+  return rateSchedule[rateSchedule.length - 1].rate;
+}
+
+function growthFactor(startIso, endIso) {
+  if (endIso <= startIso) {
+    return 1;
+  }
+
+  const boundaries = new Set([startIso, endIso]);
+  rateSchedule.forEach((item) => {
+    if (item.start > startIso && item.start < endIso) {
+      boundaries.add(item.start);
+    }
+    if (item.end > startIso && item.end < endIso) {
+      boundaries.add(item.end);
+    }
+  });
+
+  const ordered = [...boundaries].sort();
+  let growth = 0;
+  for (let index = 0; index < ordered.length - 1; index += 1) {
+    const periodStart = ordered[index];
+    const periodEnd = ordered[index + 1];
+    growth += rateForDate(periodStart) * (daysBetween(periodStart, periodEnd) / 365);
+  }
+
+  return 1 + growth;
 }
 
 function roundMoney(value) {
@@ -126,7 +164,6 @@ function roundMoney(value) {
 }
 
 function buildLedger() {
-  const annualRate = Number(state.settings.annualRate || 0) / 100;
   const taxRate = Number(state.settings.taxRate || 0) / 100;
   const calculationDate = state.settings.calculationDate || todayIso();
   const lots = [];
@@ -161,7 +198,7 @@ function buildLedger() {
       return;
     }
 
-    const result = redeemFromLots(lots, transaction.amount, transaction.date, annualRate);
+    const result = redeemFromLots(lots, transaction.amount, transaction.date);
     const roundedTaxable = roundMoney(result.taxable);
     const tax = roundMoney(roundedTaxable * taxRate);
     const net = roundMoney(transaction.amount - tax);
@@ -183,7 +220,7 @@ function buildLedger() {
 
   totals.remainingCost = sumRemainingCost(lots);
   totals.unrealizedInterest = lots.reduce((sum, lot) => {
-    const factor = growthFactor(lot.date, calculationDate, annualRate);
+    const factor = growthFactor(lot.date, calculationDate);
     return sum + lot.remainingCost * (factor - 1);
   }, 0);
   totals.estimatedPosition = totals.remainingCost + totals.unrealizedInterest;
@@ -198,7 +235,7 @@ function buildLedger() {
   };
 }
 
-function redeemFromLots(lots, grossWithdrawal, withdrawalDate, annualRate) {
+function redeemFromLots(lots, grossWithdrawal, withdrawalDate) {
   let remainingGross = grossWithdrawal;
   let taxable = 0;
 
@@ -207,7 +244,7 @@ function redeemFromLots(lots, grossWithdrawal, withdrawalDate, annualRate) {
       continue;
     }
 
-    const factor = growthFactor(lot.date, withdrawalDate, annualRate);
+    const factor = growthFactor(lot.date, withdrawalDate);
     const lotGrossValue = lot.remainingCost * factor;
     const grossFromLot = Math.min(remainingGross, lotGrossValue);
     const costFromLot = factor > 0 ? grossFromLot / factor : grossFromLot;
@@ -229,7 +266,6 @@ function sumRemainingCost(lots) {
 }
 
 function render() {
-  elements.annualRate.value = state.settings.annualRate;
   elements.taxRate.value = state.settings.taxRate;
   elements.calculationDate.value = state.settings.calculationDate;
 
@@ -283,7 +319,6 @@ function escapeHtml(value) {
 elements.settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
   state.settings = {
-    annualRate: Number(elements.annualRate.value || 0),
     taxRate: Number(elements.taxRate.value || 0),
     calculationDate: elements.calculationDate.value || todayIso(),
   };
