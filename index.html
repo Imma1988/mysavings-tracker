@@ -102,8 +102,13 @@
 
           <div class="form-grid">
             <label>
-              Data da operacao
+              Data do pedido / entrada
               <input id="transactionDate" type="date" required>
+            </label>
+
+            <label>
+              Data da operacao
+              <input id="operationDate" type="date">
             </label>
 
             <label>
@@ -123,7 +128,7 @@
 
       <section class="panel formula-panel">
         <h2>Regra usada</h2>
-        <p>Os resgates consomem primeiro as entradas mais antigas. Para cada parte resgatada, a valorizacao e calculada com a taxa historica aplicavel a cada dia do periodo; imposto = valor sujeito a imposto x 28%.</p>
+        <p>Os resgates consomem primeiro as entradas mais antigas. Para impostos, a valorizacao e calculada ate a data do pedido; a data da operacao fica como referencia do movimento.</p>
       </section>
 
       <section class="panel table-panel">
@@ -139,7 +144,8 @@
           <table>
             <thead>
               <tr>
-                <th>Data</th>
+                <th>Data pedido</th>
+                <th>Data operacao</th>
                 <th>Tipo</th>
                 <th>Nota</th>
                 <th class="number">Valor bruto</th>
