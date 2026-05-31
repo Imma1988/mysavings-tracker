@@ -107,11 +107,6 @@
             </label>
 
             <label>
-              Data da operacao
-              <input id="operationDate" type="date">
-            </label>
-
-            <label>
               Valor (&euro;)
               <input id="transactionAmount" type="number" min="0.01" step="0.01" required>
             </label>
@@ -128,7 +123,7 @@
 
       <section class="panel formula-panel">
         <h2>Regra usada</h2>
-        <p>Os resgates consomem primeiro as entradas mais antigas. Para impostos, a valorizacao e calculada ate a data do pedido; a data da operacao fica como referencia do movimento.</p>
+        <p>Os resgates consomem primeiro as entradas mais antigas. A data registada deve ser a data do pedido, porque e essa data que a app usa para calcular o valor sujeito a imposto.</p>
       </section>
 
       <section class="panel table-panel">
@@ -145,7 +140,6 @@
             <thead>
               <tr>
                 <th>Data pedido</th>
-                <th>Data operacao</th>
                 <th>Tipo</th>
                 <th>Nota</th>
                 <th class="number">Valor bruto</th>

@@ -21,7 +21,6 @@ const elements = {
   taxRate: document.querySelector("#taxRate"),
   calculationDate: document.querySelector("#calculationDate"),
   transactionDate: document.querySelector("#transactionDate"),
-  operationDate: document.querySelector("#operationDate"),
   transactionAmount: document.querySelector("#transactionAmount"),
   transactionNote: document.querySelector("#transactionNote"),
   transactionForm: document.querySelector("#transactionForm"),
@@ -97,7 +96,6 @@ function normalizeState(value) {
         id: item.id || crypto.randomUUID(),
         type: item.type,
         date: item.date || todayIso(),
-        operationDate: item.operationDate || item.date || todayIso(),
         amount: Math.abs(Number(item.amount || 0)),
         note: item.note || "",
         createdAt: item.createdAt || new Date().toISOString(),
@@ -112,8 +110,7 @@ function saveState() {
 function sortTransactions(transactions = state.transactions) {
   return [...transactions].sort((a, b) => {
     const byDate = a.date.localeCompare(b.date);
-    const byOperationDate = (a.operationDate || a.date).localeCompare(b.operationDate || b.date);
-    return byDate || byOperationDate || a.createdAt.localeCompare(b.createdAt);
+    return byDate || a.createdAt.localeCompare(b.createdAt);
   });
 }
 
@@ -298,7 +295,6 @@ function render() {
       return `
         <tr>
           <td>${transaction.date}</td>
-          <td>${transaction.type === "withdrawal" ? transaction.operationDate || transaction.date : "-"}</td>
           <td><span class="pill ${transaction.type}">${labels[transaction.type]}</span></td>
           <td>${escapeHtml(transaction.note || "-")}${warning}</td>
           <td class="number">${currency.format(transaction.amount)}</td>
@@ -342,7 +338,6 @@ elements.transactionForm.addEventListener("submit", (event) => {
     id: crypto.randomUUID(),
     type: form.get("type"),
     date: elements.transactionDate.value,
-    operationDate: elements.operationDate.value || elements.transactionDate.value,
     amount: Number(elements.transactionAmount.value),
     note: elements.transactionNote.value.trim(),
     createdAt: new Date().toISOString(),
@@ -350,7 +345,6 @@ elements.transactionForm.addEventListener("submit", (event) => {
 
   elements.transactionForm.reset();
   elements.transactionDate.value = todayIso();
-  elements.operationDate.value = "";
   elements.transactionForm.querySelector('input[value="deposit"]').checked = true;
   saveState();
   render();
@@ -412,7 +406,6 @@ elements.clearData.addEventListener("click", () => {
 });
 
 elements.transactionDate.value = todayIso();
-elements.operationDate.value = "";
 if (!state.settings.calculationDate) {
   state.settings.calculationDate = todayIso();
 }
