@@ -3,7 +3,7 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
-    <title>MySavings Lucro Real</title>
+    <title>MySavings FIFO</title>
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
@@ -11,7 +11,7 @@
       <section class="topbar" aria-label="Resumo">
         <div>
           <p class="eyebrow">Fidelidade MySavings</p>
-          <h1>Lucro real dos levantamentos</h1>
+          <h1>Validador de resgates e imposto</h1>
         </div>
         <div class="toolbar">
           <button id="exportJson" type="button" title="Exportar dados">Exportar</button>
@@ -23,47 +23,60 @@
       </section>
 
       <section class="metrics-grid" aria-label="Indicadores">
-        <article class="metric">
-          <span>Saldo atual na MySavings</span>
-          <strong id="currentBalance">0,00 &euro;</strong>
-        </article>
-        <article class="metric highlight">
-          <span>Lucro liquido real</span>
-          <strong id="netProfit">0,00 &euro;</strong>
-        </article>
-        <article class="metric">
-          <span>Juros brutos antes de imposto</span>
-          <strong id="grossProfit">0,00 &euro;</strong>
-        </article>
-        <article class="metric">
-          <span>Imposto retido</span>
-          <strong id="taxWithheld">0,00 &euro;</strong>
-        </article>
         <article class="metric compact">
           <span>Total de entradas</span>
           <strong id="totalDeposits">0,00 &euro;</strong>
         </article>
         <article class="metric compact">
-          <span>Total levantado</span>
+          <span>Total resgatado bruto</span>
           <strong id="totalWithdrawals">0,00 &euro;</strong>
+        </article>
+        <article class="metric highlight">
+          <span>Valor sujeito a imposto</span>
+          <strong id="realizedTaxable">0,00 &euro;</strong>
+        </article>
+        <article class="metric">
+          <span>Imposto retido estimado</span>
+          <strong id="taxWithheld">0,00 &euro;</strong>
+        </article>
+        <article class="metric compact">
+          <span>Valor liquido resgatado</span>
+          <strong id="netWithdrawals">0,00 &euro;</strong>
+        </article>
+        <article class="metric compact">
+          <span>Capital ainda aplicado</span>
+          <strong id="remainingCost">0,00 &euro;</strong>
+        </article>
+        <article class="metric compact">
+          <span>Juros brutos por resgatar</span>
+          <strong id="unrealizedInterest">0,00 &euro;</strong>
+        </article>
+        <article class="metric compact">
+          <span>Posicao bruta estimada</span>
+          <strong id="estimatedPosition">0,00 &euro;</strong>
         </article>
       </section>
 
       <section class="workspace">
         <form id="settingsForm" class="panel settings-panel">
           <div class="panel-heading">
-            <h2>Saldo e imposto</h2>
-            <p>Atualiza o saldo com o valor que aparece agora na app MySavings.</p>
+            <h2>Parametros</h2>
+            <p>A TANB e usada para calcular a mais-valia bruta de cada resgate.</p>
           </div>
 
           <label>
-            Saldo atual na MySavings (&euro;)
-            <input id="currentBalanceInput" type="number" min="0" step="0.01" value="0">
+            TANB anual (%)
+            <input id="annualRate" type="number" min="0" step="0.01" value="2">
           </label>
 
           <label>
             Retencao de imposto (%)
             <input id="taxRate" type="number" min="0" max="100" step="0.01" value="28">
+          </label>
+
+          <label>
+            Data para estimar juros ainda por resgatar
+            <input id="calculationDate" type="date">
           </label>
 
           <button type="submit">Atualizar calculo</button>
@@ -72,7 +85,7 @@
         <form id="transactionForm" class="panel transaction-panel">
           <div class="panel-heading">
             <h2>Novo movimento</h2>
-            <p>Regista apenas dinheiro que entrou ou saiu da MySavings.</p>
+            <p>Nas entradas usa o valor aplicado; nos resgates usa o valor bruto do resgate.</p>
           </div>
 
           <div class="segmented" role="group" aria-label="Tipo de movimento">
@@ -82,13 +95,13 @@
             </label>
             <label>
               <input type="radio" name="type" value="withdrawal">
-              <span>Levantamento</span>
+              <span>Resgate</span>
             </label>
           </div>
 
           <div class="form-grid">
             <label>
-              Data
+              Data da operacao
               <input id="transactionDate" type="date" required>
             </label>
 
@@ -100,7 +113,7 @@
 
           <label>
             Nota
-            <input id="transactionNote" type="text" maxlength="80" placeholder="Ex.: levantamento parcial">
+            <input id="transactionNote" type="text" maxlength="80" placeholder="Ex.: resgate parcial">
           </label>
 
           <button type="submit">Adicionar movimento</button>
@@ -108,8 +121,8 @@
       </section>
 
       <section class="panel formula-panel">
-        <h2>Como o lucro e calculado</h2>
-        <p>Lucro liquido real = saldo atual + total levantado - total de entradas. Se todos os movimentos estiverem registados, este valor e o dinheiro que ganhaste depois de imposto.</p>
+        <h2>Regra usada</h2>
+        <p>Os resgates consomem primeiro as entradas mais antigas. Para cada parte resgatada: valor sujeito a imposto = valor bruto resgatado - custo original proporcional; imposto = valor sujeito a imposto x 28%.</p>
       </section>
 
       <section class="panel table-panel">
@@ -128,8 +141,11 @@
                 <th>Data</th>
                 <th>Tipo</th>
                 <th>Nota</th>
-                <th class="number">Valor</th>
-                <th class="number">Capital ainda aplicado</th>
+                <th class="number">Valor bruto</th>
+                <th class="number">Sujeito a imposto</th>
+                <th class="number">Imposto</th>
+                <th class="number">Liquido esperado</th>
+                <th class="number">Capital restante</th>
                 <th></th>
               </tr>
             </thead>

@@ -1,5 +1,5 @@
-const storageKey = "mysavings-tracker-v2";
-const legacyStorageKey = "mysavings-tracker-v1";
+const storageKey = "mysavings-tracker-v3";
+const previousStorageKeys = ["mysavings-tracker-v2", "mysavings-tracker-v1"];
 
 const currency = new Intl.NumberFormat("pt-PT", {
   style: "currency",
@@ -8,12 +8,13 @@ const currency = new Intl.NumberFormat("pt-PT", {
 
 const labels = {
   deposit: "Entrada",
-  withdrawal: "Levantamento",
+  withdrawal: "Resgate",
 };
 
 const elements = {
+  annualRate: document.querySelector("#annualRate"),
   taxRate: document.querySelector("#taxRate"),
-  currentBalanceInput: document.querySelector("#currentBalanceInput"),
+  calculationDate: document.querySelector("#calculationDate"),
   transactionDate: document.querySelector("#transactionDate"),
   transactionAmount: document.querySelector("#transactionAmount"),
   transactionNote: document.querySelector("#transactionNote"),
@@ -21,12 +22,14 @@ const elements = {
   settingsForm: document.querySelector("#settingsForm"),
   transactionsTable: document.querySelector("#transactionsTable"),
   movementCount: document.querySelector("#movementCount"),
-  currentBalance: document.querySelector("#currentBalance"),
-  netProfit: document.querySelector("#netProfit"),
-  grossProfit: document.querySelector("#grossProfit"),
-  taxWithheld: document.querySelector("#taxWithheld"),
   totalDeposits: document.querySelector("#totalDeposits"),
   totalWithdrawals: document.querySelector("#totalWithdrawals"),
+  realizedTaxable: document.querySelector("#realizedTaxable"),
+  taxWithheld: document.querySelector("#taxWithheld"),
+  netWithdrawals: document.querySelector("#netWithdrawals"),
+  remainingCost: document.querySelector("#remainingCost"),
+  unrealizedInterest: document.querySelector("#unrealizedInterest"),
+  estimatedPosition: document.querySelector("#estimatedPosition"),
   exportJson: document.querySelector("#exportJson"),
   importJson: document.querySelector("#importJson"),
   clearData: document.querySelector("#clearData"),
@@ -41,8 +44,9 @@ function todayIso() {
 function emptyState() {
   return {
     settings: {
-      currentBalance: 0,
+      annualRate: 2,
       taxRate: 28,
+      calculationDate: todayIso(),
     },
     transactions: [],
   };
@@ -54,15 +58,11 @@ function loadState() {
     return normalizeState(saved);
   }
 
-  const legacy = readStoredState(legacyStorageKey);
-  if (legacy) {
-    return normalizeState({
-      settings: {
-        currentBalance: legacy.transactions.reduce((sum, item) => sum + signedLegacyAmount(item), 0),
-        taxRate: legacy.settings?.taxRate ?? 28,
-      },
-      transactions: legacy.transactions.filter((item) => item.type === "deposit" || item.type === "withdrawal"),
-    });
+  for (const key of previousStorageKeys) {
+    const previous = readStoredState(key);
+    if (previous) {
+      return normalizeState(previous);
+    }
   }
 
   return emptyState();
@@ -83,8 +83,9 @@ function normalizeState(value) {
     settings: {
       ...fallback.settings,
       ...value.settings,
-      currentBalance: Number(value.settings?.currentBalance ?? 0),
-      taxRate: Number(value.settings?.taxRate ?? 28),
+      annualRate: Number(value.settings?.annualRate ?? fallback.settings.annualRate),
+      taxRate: Number(value.settings?.taxRate ?? fallback.settings.taxRate),
+      calculationDate: value.settings?.calculationDate || fallback.settings.calculationDate,
     },
     transactions: value.transactions
       .filter((item) => item.type === "deposit" || item.type === "withdrawal")
@@ -103,14 +104,6 @@ function saveState() {
   localStorage.setItem(storageKey, JSON.stringify(state, null, 2));
 }
 
-function signedLegacyAmount(transaction) {
-  if (transaction.type === "withdrawal") {
-    return -Math.abs(Number(transaction.amount || 0));
-  }
-
-  return Math.abs(Number(transaction.amount || 0));
-}
-
 function sortTransactions(transactions = state.transactions) {
   return [...transactions].sort((a, b) => {
     const byDate = a.date.localeCompare(b.date);
@@ -118,64 +111,157 @@ function sortTransactions(transactions = state.transactions) {
   });
 }
 
-function calculateSummary() {
-  const taxRate = Number(state.settings.taxRate) / 100;
-  const totalDeposits = state.transactions
-    .filter((item) => item.type === "deposit")
-    .reduce((sum, item) => sum + item.amount, 0);
-  const totalWithdrawals = state.transactions
-    .filter((item) => item.type === "withdrawal")
-    .reduce((sum, item) => sum + item.amount, 0);
-  const currentBalance = Number(state.settings.currentBalance || 0);
-  const netProfit = currentBalance + totalWithdrawals - totalDeposits;
-  const grossProfit = netProfit > 0 && taxRate < 1 ? netProfit / (1 - taxRate) : netProfit;
-  const taxWithheld = netProfit > 0 ? grossProfit - netProfit : 0;
+function daysBetween(startIso, endIso) {
+  const start = new Date(`${startIso}T00:00:00`);
+  const end = new Date(`${endIso}T00:00:00`);
+  return Math.max(0, Math.round((end - start) / 86400000));
+}
+
+function growthFactor(startIso, endIso, annualRate) {
+  return 1 + annualRate * (daysBetween(startIso, endIso) / 365);
+}
+
+function roundMoney(value) {
+  return Math.round((value + Number.EPSILON) * 100) / 100;
+}
+
+function buildLedger() {
+  const annualRate = Number(state.settings.annualRate || 0) / 100;
+  const taxRate = Number(state.settings.taxRate || 0) / 100;
+  const calculationDate = state.settings.calculationDate || todayIso();
+  const lots = [];
+  const rows = [];
+  const totals = {
+    totalDeposits: 0,
+    totalWithdrawals: 0,
+    realizedTaxable: 0,
+    taxWithheld: 0,
+    netWithdrawals: 0,
+    remainingCost: 0,
+    unrealizedInterest: 0,
+    estimatedPosition: 0,
+  };
+
+  sortTransactions().forEach((transaction) => {
+    if (transaction.type === "deposit") {
+      lots.push({
+        id: transaction.id,
+        date: transaction.date,
+        remainingCost: transaction.amount,
+      });
+      totals.totalDeposits += transaction.amount;
+      rows.push({
+        ...transaction,
+        taxable: 0,
+        tax: 0,
+        net: 0,
+        unmatched: 0,
+        remainingCost: sumRemainingCost(lots),
+      });
+      return;
+    }
+
+    const result = redeemFromLots(lots, transaction.amount, transaction.date, annualRate);
+    const roundedTaxable = roundMoney(result.taxable);
+    const tax = roundMoney(roundedTaxable * taxRate);
+    const net = roundMoney(transaction.amount - tax);
+
+    totals.totalWithdrawals += transaction.amount;
+    totals.realizedTaxable += roundedTaxable;
+    totals.taxWithheld += tax;
+    totals.netWithdrawals += net;
+
+    rows.push({
+      ...transaction,
+      taxable: roundedTaxable,
+      tax,
+      net,
+      unmatched: result.unmatched,
+      remainingCost: sumRemainingCost(lots),
+    });
+  });
+
+  totals.remainingCost = sumRemainingCost(lots);
+  totals.unrealizedInterest = lots.reduce((sum, lot) => {
+    const factor = growthFactor(lot.date, calculationDate, annualRate);
+    return sum + lot.remainingCost * (factor - 1);
+  }, 0);
+  totals.estimatedPosition = totals.remainingCost + totals.unrealizedInterest;
 
   return {
-    currentBalance,
-    totalDeposits,
-    totalWithdrawals,
-    netProfit,
-    grossProfit,
-    taxWithheld,
+    rows,
+    totals: {
+      ...totals,
+      unrealizedInterest: roundMoney(totals.unrealizedInterest),
+      estimatedPosition: roundMoney(totals.estimatedPosition),
+    },
   };
 }
 
-function runningCapital() {
-  let capital = 0;
-  return sortTransactions().map((transaction) => {
-    capital += transaction.type === "withdrawal" ? -transaction.amount : transaction.amount;
-    return { ...transaction, capital };
-  });
+function redeemFromLots(lots, grossWithdrawal, withdrawalDate, annualRate) {
+  let remainingGross = grossWithdrawal;
+  let taxable = 0;
+
+  for (const lot of lots) {
+    if (remainingGross <= 0 || lot.remainingCost <= 0) {
+      continue;
+    }
+
+    const factor = growthFactor(lot.date, withdrawalDate, annualRate);
+    const lotGrossValue = lot.remainingCost * factor;
+    const grossFromLot = Math.min(remainingGross, lotGrossValue);
+    const costFromLot = factor > 0 ? grossFromLot / factor : grossFromLot;
+    const gainFromLot = grossFromLot - costFromLot;
+
+    lot.remainingCost = Math.max(0, lot.remainingCost - costFromLot);
+    taxable += Math.max(0, gainFromLot);
+    remainingGross -= grossFromLot;
+  }
+
+  return {
+    taxable,
+    unmatched: Math.max(0, remainingGross),
+  };
+}
+
+function sumRemainingCost(lots) {
+  return lots.reduce((sum, lot) => sum + lot.remainingCost, 0);
 }
 
 function render() {
-  elements.currentBalanceInput.value = state.settings.currentBalance;
+  elements.annualRate.value = state.settings.annualRate;
   elements.taxRate.value = state.settings.taxRate;
+  elements.calculationDate.value = state.settings.calculationDate;
 
-  const summary = calculateSummary();
-  elements.currentBalance.textContent = currency.format(summary.currentBalance);
-  elements.netProfit.textContent = currency.format(summary.netProfit);
-  elements.grossProfit.textContent = currency.format(summary.grossProfit);
-  elements.taxWithheld.textContent = currency.format(summary.taxWithheld);
-  elements.totalDeposits.textContent = currency.format(summary.totalDeposits);
-  elements.totalWithdrawals.textContent = currency.format(summary.totalWithdrawals);
+  const ledger = buildLedger();
+  elements.totalDeposits.textContent = currency.format(ledger.totals.totalDeposits);
+  elements.totalWithdrawals.textContent = currency.format(ledger.totals.totalWithdrawals);
+  elements.realizedTaxable.textContent = currency.format(ledger.totals.realizedTaxable);
+  elements.taxWithheld.textContent = currency.format(ledger.totals.taxWithheld);
+  elements.netWithdrawals.textContent = currency.format(ledger.totals.netWithdrawals);
+  elements.remainingCost.textContent = currency.format(ledger.totals.remainingCost);
+  elements.unrealizedInterest.textContent = currency.format(ledger.totals.unrealizedInterest);
+  elements.estimatedPosition.textContent = currency.format(ledger.totals.estimatedPosition);
 
-  const rows = runningCapital();
-  elements.movementCount.textContent = rows.length
-    ? `${rows.length} movimento${rows.length === 1 ? "" : "s"} registado${rows.length === 1 ? "" : "s"}.`
+  elements.movementCount.textContent = ledger.rows.length
+    ? `${ledger.rows.length} movimento${ledger.rows.length === 1 ? "" : "s"} registado${ledger.rows.length === 1 ? "" : "s"}.`
     : "Sem movimentos registados.";
 
-  elements.transactionsTable.innerHTML = rows
+  elements.transactionsTable.innerHTML = ledger.rows
     .map((transaction) => {
-      const signedAmount = transaction.type === "withdrawal" ? -transaction.amount : transaction.amount;
+      const warning = transaction.unmatched > 0
+        ? `<div class="warning">Sem entradas suficientes para ${currency.format(transaction.unmatched)}</div>`
+        : "";
       return `
         <tr>
           <td>${transaction.date}</td>
           <td><span class="pill ${transaction.type}">${labels[transaction.type]}</span></td>
-          <td>${escapeHtml(transaction.note || "-")}</td>
-          <td class="number">${currency.format(signedAmount)}</td>
-          <td class="number">${currency.format(transaction.capital)}</td>
+          <td>${escapeHtml(transaction.note || "-")}${warning}</td>
+          <td class="number">${currency.format(transaction.amount)}</td>
+          <td class="number">${transaction.type === "withdrawal" ? currency.format(transaction.taxable) : "-"}</td>
+          <td class="number">${transaction.type === "withdrawal" ? currency.format(transaction.tax) : "-"}</td>
+          <td class="number">${transaction.type === "withdrawal" ? currency.format(transaction.net) : "-"}</td>
+          <td class="number">${currency.format(transaction.remainingCost)}</td>
           <td class="number">
             <button class="remove-button" type="button" data-id="${transaction.id}">Remover</button>
           </td>
@@ -197,8 +283,9 @@ function escapeHtml(value) {
 elements.settingsForm.addEventListener("submit", (event) => {
   event.preventDefault();
   state.settings = {
-    currentBalance: Number(elements.currentBalanceInput.value || 0),
+    annualRate: Number(elements.annualRate.value || 0),
     taxRate: Number(elements.taxRate.value || 0),
+    calculationDate: elements.calculationDate.value || todayIso(),
   };
   saveState();
   render();
@@ -280,4 +367,7 @@ elements.clearData.addEventListener("click", () => {
 });
 
 elements.transactionDate.value = todayIso();
+if (!state.settings.calculationDate) {
+  state.settings.calculationDate = todayIso();
+}
 render();
