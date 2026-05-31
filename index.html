@@ -61,13 +61,19 @@
         <form id="settingsForm" class="panel settings-panel">
           <div class="panel-heading">
             <h2>Parametros</h2>
-            <p>As taxas historicas sao aplicadas automaticamente por periodo.</p>
+            <p>Importa o Excel de cotacoes da Fidelidade para validar ao centimo.</p>
           </div>
 
-          <div class="rate-history" aria-label="Historico de taxas">
-            <div><strong>1o semestre 2026</strong><span>2,000% TANB</span></div>
-            <div><strong>2o semestre 2025</strong><span>1,700% TANB</span></div>
-            <div><strong>1o semestre 2025</strong><span>2,250% TANB</span></div>
+          <div class="quote-import">
+            <label class="import-button secondary" title="Importar Excel de cotacoes">
+              Importar cotacoes
+              <input id="importQuotes" type="file" accept=".xlsx,.xls,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet,application/vnd.ms-excel">
+            </label>
+            <button id="clearQuotes" type="button" class="ghost">Limpar cotacoes</button>
+          </div>
+
+          <div id="quoteStatus" class="quote-status" aria-live="polite">
+            Sem cotacoes importadas. A app usa TANB como estimativa.
           </div>
 
           <label>
@@ -123,7 +129,7 @@
 
       <section class="panel formula-panel">
         <h2>Regra usada</h2>
-        <p>Os resgates consomem primeiro as entradas mais antigas. A data registada deve ser a data do pedido, porque e essa data que a app usa para calcular o valor sujeito a imposto.</p>
+        <p>Com cotacoes importadas, as entradas compram unidades pela proxima cotacao disponivel e os resgates vendem unidades FIFO pela cotacao da operacao. Sem cotacoes, a app usa TANB apenas como estimativa.</p>
       </section>
 
       <section class="panel table-panel">
@@ -156,6 +162,7 @@
       </section>
     </main>
 
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <script src="app.js"></script>
   </body>
 </html>

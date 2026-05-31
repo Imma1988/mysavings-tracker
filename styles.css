@@ -53,6 +53,17 @@ button:hover,
   transform: translateY(-1px);
 }
 
+button.ghost,
+.import-button.secondary {
+  background: rgba(15, 123, 99, 0.1);
+  color: var(--brand-dark);
+}
+
+button.ghost:hover,
+.import-button.secondary:hover {
+  background: rgba(15, 123, 99, 0.18);
+}
+
 button.danger {
   background: transparent;
   color: var(--red);
@@ -91,6 +102,23 @@ button.danger:hover {
 
 .import-button input {
   display: none;
+}
+
+.quote-import {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 8px;
+}
+
+.quote-status {
+  border: 1px solid rgba(15, 123, 99, 0.18);
+  border-radius: 8px;
+  background: rgba(15, 123, 99, 0.08);
+  color: var(--brand-dark);
+  font-size: 0.86rem;
+  font-weight: 700;
+  line-height: 1.35;
+  padding: 10px;
 }
 
 .eyebrow {
@@ -337,6 +365,13 @@ th {
   margin-top: 4px;
 }
 
+.quote-line {
+  color: var(--muted);
+  font-size: 0.76rem;
+  font-weight: 700;
+  margin-top: 4px;
+}
+
 .pill {
   border-radius: 999px;
   display: inline-flex;
@@ -404,7 +439,12 @@ th {
   }
 
   .toolbar button,
-  .toolbar .import-button {
+  .toolbar .import-button,
+  .quote-import {
     flex: 1;
+  }
+
+  .quote-import {
+    grid-template-columns: 1fr;
   }
 }

@@ -1,4 +1,5 @@
 const storageKey = "mysavings-tracker-v4";
+const quoteStorageKey = "mysavings-tracker-quotes-v1";
 const previousStorageKeys = ["mysavings-tracker-v3", "mysavings-tracker-v2", "mysavings-tracker-v1"];
 
 const currency = new Intl.NumberFormat("pt-PT", {
@@ -37,10 +38,14 @@ const elements = {
   estimatedPosition: document.querySelector("#estimatedPosition"),
   exportJson: document.querySelector("#exportJson"),
   importJson: document.querySelector("#importJson"),
+  importQuotes: document.querySelector("#importQuotes"),
+  clearQuotes: document.querySelector("#clearQuotes"),
+  quoteStatus: document.querySelector("#quoteStatus"),
   clearData: document.querySelector("#clearData"),
 };
 
 let state = loadState();
+let quotes = loadQuotes();
 
 function todayIso() {
   return new Date().toISOString().slice(0, 10);
@@ -110,6 +115,35 @@ function saveState() {
   localStorage.setItem(storageKey, JSON.stringify(state, null, 2));
 }
 
+function loadQuotes() {
+  try {
+    const saved = JSON.parse(localStorage.getItem(quoteStorageKey));
+    if (!saved || !saved.values || !Array.isArray(saved.dates)) {
+      return emptyQuotes();
+    }
+
+    return {
+      importedAt: saved.importedAt || "",
+      values: saved.values,
+      dates: saved.dates.filter((date) => Number.isFinite(Number(saved.values[date]))).sort(),
+    };
+  } catch {
+    return emptyQuotes();
+  }
+}
+
+function emptyQuotes() {
+  return {
+    importedAt: "",
+    values: {},
+    dates: [],
+  };
+}
+
+function saveQuotes() {
+  localStorage.setItem(quoteStorageKey, JSON.stringify(quotes, null, 2));
+}
+
 function sortTransactions(transactions = state.transactions) {
   return [...transactions].sort((a, b) => {
     const byDate = a.date.localeCompare(b.date);
@@ -170,7 +204,42 @@ function floorMoney(value) {
   return Math.floor((value + Number.EPSILON) * 100) / 100;
 }
 
+function hasQuotes() {
+  return quotes.dates.length > 0;
+}
+
+function quoteForDate(iso, mode = "same-or-next") {
+  if (!hasQuotes()) {
+    return null;
+  }
+
+  const match = mode === "next"
+    ? quotes.dates.find((date) => date > iso)
+    : quotes.dates.find((date) => date >= iso);
+
+  if (!match) {
+    return null;
+  }
+
+  return {
+    date: match,
+    value: Number(quotes.values[match]),
+  };
+}
+
+function quoteForDeposit(iso) {
+  return quoteForDate(iso, "next");
+}
+
+function quoteForWithdrawal(iso) {
+  return quoteForDate(iso, "next");
+}
+
 function buildLedger() {
+  return hasQuotes() ? buildQuoteLedger() : buildEstimatedLedger();
+}
+
+function buildEstimatedLedger() {
   const taxRate = Number(state.settings.taxRate || 0) / 100;
   const calculationDate = state.settings.calculationDate || todayIso();
   const lots = [];
@@ -242,6 +311,94 @@ function buildLedger() {
   };
 }
 
+function buildQuoteLedger() {
+  const taxRate = Number(state.settings.taxRate || 0) / 100;
+  const calculationDate = state.settings.calculationDate || todayIso();
+  const lots = [];
+  const rows = [];
+  const totals = {
+    totalDeposits: 0,
+    totalWithdrawals: 0,
+    realizedTaxable: 0,
+    taxWithheld: 0,
+    netWithdrawals: 0,
+    remainingCost: 0,
+    unrealizedInterest: 0,
+    estimatedPosition: 0,
+  };
+
+  sortTransactions().forEach((transaction) => {
+    if (transaction.type === "deposit") {
+      const quote = quoteForDeposit(transaction.date);
+      if (quote) {
+        lots.push({
+          id: transaction.id,
+          date: transaction.date,
+          quoteDate: quote.date,
+          quote: quote.value,
+          remainingUnits: transaction.amount / quote.value,
+        });
+      }
+
+      totals.totalDeposits += transaction.amount;
+      rows.push({
+        ...transaction,
+        taxable: 0,
+        tax: 0,
+        net: 0,
+        unmatched: quote ? 0 : transaction.amount,
+        remainingCost: sumRemainingCostFromUnits(lots),
+        quoteDate: quote?.date || "",
+      });
+      return;
+    }
+
+    const quote = quoteForWithdrawal(transaction.date);
+    const result = quote
+      ? redeemUnitsFromLots(lots, transaction.amount, quote)
+      : { taxable: 0, unmatched: transaction.amount, details: [] };
+    const roundedTaxable = roundMoney(result.taxable);
+    const tax = roundMoney(roundedTaxable * taxRate);
+    const net = roundMoney(transaction.amount - tax);
+
+    totals.totalWithdrawals += transaction.amount;
+    totals.realizedTaxable += roundedTaxable;
+    totals.taxWithheld += tax;
+    totals.netWithdrawals += net;
+
+    rows.push({
+      ...transaction,
+      taxable: roundedTaxable,
+      tax,
+      net,
+      unmatched: result.unmatched,
+      remainingCost: sumRemainingCostFromUnits(lots),
+      quoteDate: quote?.date || "",
+      details: result.details,
+    });
+  });
+
+  totals.remainingCost = sumRemainingCostFromUnits(lots);
+  const currentQuote = quoteForDate(calculationDate, "same-or-next");
+  totals.estimatedPosition = currentQuote
+    ? lots.reduce((sum, lot) => sum + lot.remainingUnits * currentQuote.value, 0)
+    : totals.remainingCost;
+  totals.unrealizedInterest = totals.estimatedPosition - totals.remainingCost;
+
+  return {
+    rows,
+    totals: {
+      ...totals,
+      realizedTaxable: roundMoney(totals.realizedTaxable),
+      taxWithheld: roundMoney(totals.taxWithheld),
+      netWithdrawals: roundMoney(totals.netWithdrawals),
+      remainingCost: roundMoney(totals.remainingCost),
+      unrealizedInterest: roundMoney(totals.unrealizedInterest),
+      estimatedPosition: roundMoney(totals.estimatedPosition),
+    },
+  };
+}
+
 function redeemFromLots(lots, grossWithdrawal, withdrawalDate) {
   let remainingGross = grossWithdrawal;
   let taxable = 0;
@@ -272,9 +429,47 @@ function sumRemainingCost(lots) {
   return lots.reduce((sum, lot) => sum + lot.remainingCost, 0);
 }
 
+function sumRemainingCostFromUnits(lots) {
+  return lots.reduce((sum, lot) => sum + lot.remainingUnits * lot.quote, 0);
+}
+
+function redeemUnitsFromLots(lots, grossWithdrawal, withdrawalQuote) {
+  let remainingUnits = grossWithdrawal / withdrawalQuote.value;
+  let taxable = 0;
+  const details = [];
+
+  for (const lot of lots) {
+    if (remainingUnits <= 0 || lot.remainingUnits <= 0) {
+      continue;
+    }
+
+    const unitsFromLot = Math.min(remainingUnits, lot.remainingUnits);
+    const grossFromLot = unitsFromLot * withdrawalQuote.value;
+    const costFromLot = unitsFromLot * lot.quote;
+    const gainFromLot = Math.max(0, grossFromLot - costFromLot);
+
+    lot.remainingUnits = Math.max(0, lot.remainingUnits - unitsFromLot);
+    taxable += gainFromLot;
+    remainingUnits -= unitsFromLot;
+    details.push({
+      depositDate: lot.date,
+      depositQuoteDate: lot.quoteDate,
+      withdrawalQuoteDate: withdrawalQuote.date,
+      gain: gainFromLot,
+    });
+  }
+
+  return {
+    taxable,
+    unmatched: Math.max(0, remainingUnits * withdrawalQuote.value),
+    details,
+  };
+}
+
 function render() {
   elements.taxRate.value = state.settings.taxRate;
   elements.calculationDate.value = state.settings.calculationDate;
+  renderQuoteStatus();
 
   const ledger = buildLedger();
   elements.totalDeposits.textContent = currency.format(ledger.totals.totalDeposits);
@@ -295,11 +490,14 @@ function render() {
       const warning = transaction.unmatched > 0
         ? `<div class="warning">Sem entradas suficientes para ${currency.format(transaction.unmatched)}</div>`
         : "";
+      const quoteInfo = transaction.quoteDate
+        ? `<div class="quote-line">Cotacao: ${transaction.quoteDate}</div>`
+        : "";
       return `
         <tr>
           <td>${transaction.date}</td>
           <td><span class="pill ${transaction.type}">${labels[transaction.type]}</span></td>
-          <td>${escapeHtml(transaction.note || "-")}${warning}</td>
+          <td>${escapeHtml(transaction.note || "-")}${quoteInfo}${warning}</td>
           <td class="number">${currency.format(transaction.amount)}</td>
           <td class="number">${transaction.type === "withdrawal" ? currency.format(transaction.taxable) : "-"}</td>
           <td class="number">${transaction.type === "withdrawal" ? currency.format(transaction.tax) : "-"}</td>
@@ -312,6 +510,17 @@ function render() {
       `;
     })
     .join("");
+}
+
+function renderQuoteStatus() {
+  if (!hasQuotes()) {
+    elements.quoteStatus.textContent = "Sem cotacoes importadas. A app usa TANB como estimativa.";
+    return;
+  }
+
+  const firstDate = quotes.dates[0];
+  const lastDate = quotes.dates[quotes.dates.length - 1];
+  elements.quoteStatus.textContent = `${quotes.dates.length} cotacoes importadas (${firstDate} a ${lastDate}).`;
 }
 
 function escapeHtml(value) {
@@ -396,6 +605,38 @@ elements.importJson.addEventListener("change", async (event) => {
   }
 });
 
+elements.importQuotes.addEventListener("change", async (event) => {
+  const [file] = event.target.files;
+  if (!file) {
+    return;
+  }
+
+  try {
+    if (!window.XLSX) {
+      throw new Error("Biblioteca XLSX indisponivel");
+    }
+
+    const importedQuotes = await readQuotesFromExcel(file);
+    if (!importedQuotes.dates.length) {
+      throw new Error("Sem cotacoes");
+    }
+
+    quotes = importedQuotes;
+    saveQuotes();
+    render();
+  } catch {
+    alert("Nao foi possivel importar as cotacoes. Confirma se e o Excel da Fidelidade com DATA COTACAO e COTACAO.");
+  } finally {
+    event.target.value = "";
+  }
+});
+
+elements.clearQuotes.addEventListener("click", () => {
+  localStorage.removeItem(quoteStorageKey);
+  quotes = emptyQuotes();
+  render();
+});
+
 elements.clearData.addEventListener("click", () => {
   const confirmed = confirm("Queres apagar todos os dados guardados neste browser?");
   if (!confirmed) {
@@ -407,6 +648,71 @@ elements.clearData.addEventListener("click", () => {
   elements.transactionDate.value = todayIso();
   render();
 });
+
+async function readQuotesFromExcel(file) {
+  const data = await file.arrayBuffer();
+  const workbook = XLSX.read(data, { type: "array", cellDates: true });
+  const sheet = workbook.Sheets[workbook.SheetNames[0]];
+  const rows = XLSX.utils.sheet_to_json(sheet, { defval: "" });
+  const values = {};
+
+  rows.forEach((row) => {
+    const dateValue = row["DATA COTAÇÃO"] || row["DATA COTACAO"] || row["Data Cotação"] || row["Data Cotacao"];
+    const quoteValue = row["COTAÇÃO"] || row["COTACAO"] || row["Cotação"] || row["Cotacao"];
+    const date = normalizeExcelDate(dateValue);
+    const quote = normalizeQuoteValue(quoteValue);
+
+    if (date && Number.isFinite(quote)) {
+      values[date] = quote;
+    }
+  });
+
+  return {
+    importedAt: new Date().toISOString(),
+    values,
+    dates: Object.keys(values).sort(),
+  };
+}
+
+function normalizeExcelDate(value) {
+  if (value instanceof Date) {
+    return value.toISOString().slice(0, 10);
+  }
+
+  if (typeof value === "number") {
+    const date = XLSX.SSF.parse_date_code(value);
+    if (!date) {
+      return "";
+    }
+    return `${date.y}-${String(date.m).padStart(2, "0")}-${String(date.d).padStart(2, "0")}`;
+  }
+
+  const text = String(value || "").trim();
+  const iso = text.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/);
+  if (iso) {
+    return `${iso[1]}-${iso[2].padStart(2, "0")}-${iso[3].padStart(2, "0")}`;
+  }
+
+  const pt = text.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+  if (pt) {
+    return `${pt[3]}-${pt[2].padStart(2, "0")}-${pt[1].padStart(2, "0")}`;
+  }
+
+  return "";
+}
+
+function normalizeQuoteValue(value) {
+  if (typeof value === "number") {
+    return value;
+  }
+
+  const normalized = String(value || "")
+    .replace("€", "")
+    .replace(/\s/g, "")
+    .replace(",", ".");
+
+  return Number(normalized);
+}
 
 elements.transactionDate.value = todayIso();
 if (!state.settings.calculationDate) {
